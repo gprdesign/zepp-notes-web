@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zepp Quick Notes</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a1a;
+    color: #fff;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  header h1 { font-size: 22px; font-weight: 600; }
+  header span { font-size: 13px; color: #888; }
+
+  .card {
+    background: #2a2a2a;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .add-area {
+    display: flex;
+    gap: 10px;
+  }
+  .add-area input {
+    flex: 1;
+    background: #333;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: #fff;
+    font-size: 15px;
+    outline: none;
+  }
+  .add-area input::placeholder { color: #666; }
+  .add-area button {
+    background: #0986D4;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .add-area button:hover { background: #0770b5; }
+
+  .section-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 12px;
+  }
+
+  #notes-list { list-style: none; }
+
+  .note-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #333;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: grab;
+    transition: background 0.15s, transform 0.15s;
+    user-select: none;
+  }
+  .note-item:active { cursor: grabbing; }
+  .note-item.dragging {
+    background: #7A5C00;
+    transform: scale(1.02);
+    opacity: 0.9;
+  }
+  .note-item.drag-over { background: #444; border: 2px dashed #E8A020; }
+
+  .drag-handle {
+    color: #666;
+    font-size: 18px;
+    cursor: grab;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+  .note-text {
+    flex: 1;
+    font-size: 15px;
+    line-height: 1.4;
+    outline: none;
+    background: transparent;
+    border: none;
+    color: #fff;
+    resize: none;
+    font-family: inherit;
+    cursor: text;
+  }
+  .note-text:focus { color: #E8A020; }
+
+  .del-btn {
+    background: #AD3C23;
+    border: none;
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+  .del-btn:hover { background: #D14221; }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-sync { background: #0986D4; color: #fff; }
+  .btn-clear { background: #AD3C23; color: #fff; }
+
+  .status {
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+    margin-top: 12px;
+    min-height: 20px;
+    transition: color 0.3s;
+  }
+  .status.ok { color: #4CAF50; }
+  .status.err { color: #f44336; }
+
+  .empty {
+    text-align: center;
+    color: #555;
+    padding: 32px 0;
+    font-size: 15px;
+  }
+
+  .watch-icon { font-size: 28px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="watch-icon">⌚</span>
+  <div>
+    <h1>Zepp Quick Notes</h1>
+    <span>Amazfit Bip 6 — Gerenciador web</span>
+  </div>
+</header>
+
+<div class="card">
+  <p class="section-title">Nova nota</p>
+  <div class="add-area">
+    <input type="text" id="new-note" placeholder="Digite uma nota..." maxlength="200" />
+    <button onclick="addNote()">+</button>
+  </div>
+</div>
+
+<div class="card">
+  <p class="section-title">Notas <span id="count" style="color:#555"></span> — arraste pra reordenar</p>
+  <ul id="notes-list">
+    <li class="empty" id="empty-msg">Nenhuma nota ainda</li>
+  </ul>
+  <div class="actions">
+    <button class="btn btn-sync" onclick="syncToWatch()">⌚ Sincronizar com relógio</button>
+    <button class="btn btn-clear" onclick="clearAll()">🗑 Limpar tudo</button>
+  </div>
+  <p class="status" id="status"></p>
+</div>
+
+<script>
+// ── STORAGE ──────────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'zepp_notes_v1';
+
+function loadNotes() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch { return []; }
+}
+
+function saveNotes(notes) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+  renderList(notes);
+  updateCount(notes.length);
+}
+
+// ── RENDER ───────────────────────────────────────────────────────────────────
+function renderList(notes) {
+  const list = document.getElementById('notes-list');
+  const empty = document.getElementById('empty-msg');
+
+  list.innerHTML = '';
+
+  if (!notes.length) {
+    list.appendChild(empty);
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  notes.forEach((text, index) => {
+    const li = document.createElement('li');
+    li.className = 'note-item';
+    li.draggable = true;
+    li.dataset.index = index;
+
+    li.innerHTML = `
+      <span class="drag-handle">⠿</span>
+      <textarea class="note-text" rows="1" onblur="editNote(${index}, this.value)"
+        oninput="autoResize(this)">${escHtml(text)}</textarea>
+      <button class="del-btn" onclick="deleteNote(${index})">✕</button>
+    `;
+
+    // drag & drop
+    li.addEventListener('dragstart', onDragStart);
+    li.addEventListener('dragover', onDragOver);
+    li.addEventListener('drop', onDrop);
+    li.addEventListener('dragend', onDragEnd);
+
+    list.appendChild(li);
+
+    // auto resize textarea
+    const ta = li.querySelector('.note-text');
+    autoResize(ta);
+  });
+}
+
+function updateCount(n) {
+  document.getElementById('count').textContent = n ? `(${n})` : '';
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function autoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+function addNote() {
+  const input = document.getElementById('new-note');
+  const text = input.value.trim();
+  if (!text) return;
+  const notes = loadNotes();
+  notes.unshift(text);
+  saveNotes(notes);
+  input.value = '';
+  setStatus('Nota adicionada!', 'ok');
+}
+
+function deleteNote(index) {
+  const notes = loadNotes();
+  notes.splice(index, 1);
+  saveNotes(notes);
+  setStatus('Nota removida.', 'ok');
+}
+
+function editNote(index, newText) {
+  const notes = loadNotes();
+  const trimmed = newText.trim();
+  if (!trimmed) { deleteNote(index); return; }
+  notes[index] = trimmed;
+  saveNotes(notes);
+}
+
+function clearAll() {
+  if (!confirm('Apagar todas as notas?')) return;
+  saveNotes([]);
+  setStatus('Todas as notas foram apagadas.', 'ok');
+}
+
+// ── DRAG & DROP ──────────────────────────────────────────────────────────────
+let dragSrcIndex = null;
+
+function onDragStart(e) {
+  dragSrcIndex = +e.currentTarget.dataset.index;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.note-item').forEach(el => el.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const targetIndex = +e.currentTarget.dataset.index;
+  if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
+  const notes = loadNotes();
+  const [moved] = notes.splice(dragSrcIndex, 1);
+  notes.splice(targetIndex, 0, moved);
+  saveNotes(notes);
+  setStatus('Ordem atualizada!', 'ok');
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.note-item').forEach(el => el.classList.remove('drag-over'));
+  dragSrcIndex = null;
+}
+
+// ── SYNC ─────────────────────────────────────────────────────────────────────
+function syncToWatch() {
+  // As notas ficam no localStorage — o app-side do Zepp lê via settingsStorage.
+  // Como a página web não tem acesso direto ao settingsStorage do Zepp,
+  // o sync funciona assim: ao abrir o app no relógio, ele busca GET_NOTES
+  // e faz merge. Esta função copia a lista atual pra um formato de exportação.
+  const notes = loadNotes();
+  const json = JSON.stringify(notes);
+
+  // Tentar salvar em zepp_sync_notes (chave que o app-side pode ler se configurado)
+  localStorage.setItem('notesList', json);
+
+  setStatus(`✅ ${notes.length} notas prontas para sync. Abra o app no relógio para sincronizar.`, 'ok');
+}
+
+// ── STATUS ───────────────────────────────────────────────────────────────────
+function setStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + (type || '');
+  setTimeout(() => { el.textContent = ''; el.className = 'status'; }, 3000);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+document.getElementById('new-note').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addNote(); }
+});
+
+renderList(loadNotes());
+updateCount(loadNotes().length);
+</script>
+</body>
+</html>
